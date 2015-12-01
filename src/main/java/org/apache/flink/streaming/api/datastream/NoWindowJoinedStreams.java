@@ -4,6 +4,7 @@ import org.apache.flink.api.common.functions.JoinFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
+import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.StreamJoinOperator;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
@@ -177,7 +178,9 @@ public class NoWindowJoinedStreams<IN1, IN2> {
          * for each combination of elements with the same key in a window1.
          */
         public <OUT> DataStream<OUT> apply(JoinFunction<IN1, IN2, OUT> function) {
-            function = input1.getExecutionEnvironment().clean(function);
+            StreamExecutionEnvironment env = getExecutionEnvironment();
+            function = env.clean(function);
+            boolean enableSetProcessingTime = env.getStreamTimeCharacteristic() == TimeCharacteristic.ProcessingTime;
 
             TypeInformation<OUT> resultType = TypeExtractor.getBinaryOperatorReturnType(
                     function,
@@ -198,10 +201,17 @@ public class NoWindowJoinedStreams<IN1, IN2> {
                     time2.toMilliseconds(),
                     input1.getType().createSerializer(getExecutionEnvironment().getConfig()),
                     input2.getType().createSerializer(getExecutionEnvironment().getConfig())
-            );
+            ).enableSetProcessingTime(enableSetProcessingTime);
 
-            TwoInputTransformation<IN1, IN2, OUT>
-                    twoInputTransformation = new TwoInputTransformation<>(input1.getTransformation(), input2.getTransformation(), "Join", joinOperator, resultType, 2);
+            TwoInputTransformation<IN1, IN2, OUT> twoInputTransformation
+                    = new TwoInputTransformation<>(
+                        input1.getTransformation(),
+                        input2.getTransformation(),
+                        "Join",
+                        joinOperator,
+                        resultType,
+                        parallelism
+                    );
 
             return new DataStream<>(getExecutionEnvironment(), twoInputTransformation);
         }

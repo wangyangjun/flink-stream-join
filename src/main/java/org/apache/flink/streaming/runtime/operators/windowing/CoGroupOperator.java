@@ -275,9 +275,14 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
     }
 
+    /**
+     * Store element of stream1 in corresponding window buffers
+     * @param element
+     *      record of stream 1
+     * @throws Exception
+     */
     @Override
     public void processElement1(StreamRecord<IN1> element) throws Exception {
-        System.out.println(element.toString());
         if (setProcessingTime) {
             element.replace(element.getValue(), System.currentTimeMillis());
         }
@@ -293,8 +298,6 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
 
         for (TimeWindow window: elementWindows) {
-            System.out.println(window.toString());
-
             long windowStartTime = window.getStart();
             ContextPair context = keyWindows.get(windowStartTime);
             if (context == null) {
@@ -311,6 +314,12 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
     }
 
+    /**
+     * Store element of stream2 in corresponding window buffers
+     * @param element
+     *      record of stream 2
+     * @throws Exception
+     */
     @Override
     public void processElement2(StreamRecord<IN2> element) throws Exception {
         System.out.println(element.toString());
@@ -578,7 +587,7 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
             // if window1 or window2 is null, then there is no need to register this PairContext
             TimeWindow window = window1;
             if(null != window2) {
-                if(window2.getEnd()>window1.getEnd()) window = window1;
+                if(window2.getEnd()>window1.getEnd()) window = window2;
                 trigger1.onElement(element.getValue(), element.getTimestamp(), window, this);
             }
         }
