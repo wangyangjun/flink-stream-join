@@ -3,6 +3,7 @@ package fi.aalto.dmg;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
+import org.apache.flink.streaming.api.windowing.time.Time;
 
 /**
  * Unit test for simple App.
@@ -33,6 +34,8 @@ public class AppTest
      */
     public void testApp()
     {
+        System.out.println(System.currentTimeMillis());
+        System.out.println(Long.MIN_VALUE);
         assertTrue( true );
     }
 }

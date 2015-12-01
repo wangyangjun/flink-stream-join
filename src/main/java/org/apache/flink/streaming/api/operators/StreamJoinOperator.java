@@ -14,6 +14,7 @@ import org.apache.flink.streaming.runtime.tasks.StreamTaskState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static java.util.Objects.requireNonNull;
 
 /**
  * Join two streams(not windowed)
@@ -57,14 +58,14 @@ public class StreamJoinOperator<K, IN1, IN2, OUT>
                               TypeSerializer<IN1> inputSerializer1,
                               TypeSerializer<IN2> inputSerializer2) {
         super(userFunction);
-        this.keySelector1 = keySelector1;
-        this.keySelector2 = keySelector2;
+        this.keySelector1 = requireNonNull(keySelector1);
+        this.keySelector2 = requireNonNull(keySelector2);
 
-        this.stream1WindowLength = stream1WindowLength;
-        this.stream2WindowLength = stream2WindowLength;
+        this.stream1WindowLength = requireNonNull(stream1WindowLength);
+        this.stream2WindowLength = requireNonNull(stream2WindowLength);
 
-        this.inputSerializer1 = inputSerializer1;
-        this.inputSerializer2 = inputSerializer2;
+        this.inputSerializer1 = requireNonNull(inputSerializer1);
+        this.inputSerializer2 = requireNonNull(inputSerializer2);
     }
 
     @Override

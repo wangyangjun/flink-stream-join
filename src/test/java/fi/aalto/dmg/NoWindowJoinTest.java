@@ -83,7 +83,7 @@ public class NoWindowJoinTest implements Serializable{
                 });
         newStream.print();
 
-        env.execute("Socket Stream WordCount");
+        env.execute("No Window Join");
     }
 
 }

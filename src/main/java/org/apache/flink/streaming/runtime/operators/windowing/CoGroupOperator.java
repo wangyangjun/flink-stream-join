@@ -226,11 +226,13 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
     }
 
     protected void emitWindow(ContextPair context) throws Exception {
-        timestampedCollector.setTimestamp(context.window1.maxTimestamp());
-        if (context.windowBuffer1.size() > 0 && context.windowBuffer2.size() > 0) {
-            setKeyContextElement(context.windowBuffer1.getElements().iterator().next());
-            userFunction.coGroup(context.windowBuffer1.getUnpackedElements(),
-                    context.windowBuffer2.getUnpackedElements(), timestampedCollector);
+        if(context.coGroupAble()){
+            timestampedCollector.setTimestamp(context.window1.maxTimestamp());
+            if (context.windowBuffer1.size() > 0 && context.windowBuffer2.size() > 0) {
+                setKeyContextElement(context.windowBuffer1.getElements().iterator().next());
+                userFunction.coGroup(context.windowBuffer1.getUnpackedElements(),
+                        context.windowBuffer2.getUnpackedElements(), timestampedCollector);
+            }
         }
     }
 
@@ -305,7 +307,7 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
                 WindowBuffer<IN2> windowBuffer2 = windowBufferFactory2.create();
                 context = new ContextPair(key, window, null, windowBuffer1, windowBuffer2);
                 keyWindows.put(windowStartTime, context);
-            } else if(null == context.window1) {
+            } else if(!context.coGroupAble()) {
                 context.window1 = window;
             }
             // store element
@@ -322,7 +324,6 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
      */
     @Override
     public void processElement2(StreamRecord<IN2> element) throws Exception {
-        System.out.println(element.toString());
         if (setProcessingTime) {
             element.replace(element.getValue(), System.currentTimeMillis());
         }
@@ -338,7 +339,6 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
 
         for (TimeWindow window: elementWindows) {
-            System.out.println(window.toString());
 
             long windowStartTime = window.getStart();
             ContextPair context = keyWindows.get(windowStartTime);
@@ -347,7 +347,7 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
                 WindowBuffer<IN2> windowBuffer2 = windowBufferFactory2.create();
                 context = new ContextPair(key, null, window, windowBuffer1, windowBuffer2);
                 keyWindows.put(windowStartTime, context);
-            } else if(null == context.window2){
+            } else if(!context.coGroupAble()){
                 context.window2 = window;
             }
             // store element
@@ -456,17 +456,21 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
                            TimeWindow window2,
                            WindowBuffer<IN1> windowBuffer1,
                            WindowBuffer<IN2> windowBuffer2) {
-            this.key = key;
+            this.key = requireNonNull(key);
             this.window1 = window1;
             this.window2 = window2;
-            this.windowBuffer1 = windowBuffer1;
-            this.windowBuffer2 = windowBuffer2;
+            this.windowBuffer1 = requireNonNull(windowBuffer1);
+            this.windowBuffer2 = requireNonNull(windowBuffer2);
             state = new HashMap<>();
 
             this.watermarkTimer = -1;
             this.processingTimeTimer = -1;
         }
 
+
+        public boolean coGroupAble(){
+            return this.window1!=null&&this.window2!=null;
+        }
         /**
          * Constructs a new {@code Context} by reading from a {@link DataInputView} that
          * contains a serialized context that we wrote in
