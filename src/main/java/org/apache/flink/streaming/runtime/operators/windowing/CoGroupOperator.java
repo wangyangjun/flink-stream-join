@@ -114,6 +114,7 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
      * current watermark for stream1
      * current watermark for stream2
      */
+    protected transient long currentWatermark = -1L;
     protected transient long currentWatermark1 = -1L;
     protected transient long currentWatermark2 = -1L;
 
@@ -241,16 +242,16 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         ContextPair context;
         Map<Long, ContextPair> keyWindows = windows.get(key);
         if (keyWindows == null) {
-            LOG.debug("Window {} for key {} already gone.", window, key);
+            LOG.warn("Window {} for key {} already gone.", window, key);
             return;
         }
 
-        context = keyWindows.remove(window.getStart());
+        context = keyWindows.remove(window.getEnd());
         if (keyWindows.isEmpty()) {
             windows.remove(key);
         }
         if (context == null) {
-            LOG.debug("Window {} for key {} already gone.", window, key);
+            LOG.warn("Window {} for key {} already gone.", window, key);
             return;
         }
 
@@ -300,18 +301,17 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
 
         for (TimeWindow window: elementWindows) {
-            long windowStartTime = window.getStart();
-            ContextPair context = keyWindows.get(windowStartTime);
+            long windowEndTime = window.getEnd();
+            ContextPair context = keyWindows.get(windowEndTime);
             if (context == null) {
                 WindowBuffer<IN1> windowBuffer1 = windowBufferFactory1.create();
                 WindowBuffer<IN2> windowBuffer2 = windowBufferFactory2.create();
                 context = new ContextPair(key, window, null, windowBuffer1, windowBuffer2);
-                keyWindows.put(windowStartTime, context);
+                keyWindows.put(windowEndTime, context);
             } else if(!context.coGroupAble()) {
                 context.window1 = window;
             }
-            // store element
-            context.windowBuffer1.storeElement(element);
+            // store element and register on processingTimeTimer or eventTimeTimer
             context.onElement1(element);
         }
     }
@@ -339,93 +339,71 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         }
 
         for (TimeWindow window: elementWindows) {
-
-            long windowStartTime = window.getStart();
-            ContextPair context = keyWindows.get(windowStartTime);
+            long windowEndTime = window.getEnd();
+            ContextPair context = keyWindows.get(windowEndTime);
             if (context == null) {
                 WindowBuffer<IN1> windowBuffer1 = windowBufferFactory1.create();
                 WindowBuffer<IN2> windowBuffer2 = windowBufferFactory2.create();
                 context = new ContextPair(key, null, window, windowBuffer1, windowBuffer2);
-                keyWindows.put(windowStartTime, context);
+                keyWindows.put(windowEndTime, context);
             } else if(!context.coGroupAble()){
                 context.window2 = window;
             }
-            // store element
-            context.windowBuffer2.storeElement(element);
+            // store element and register on processingTimeTimer or eventTimeTimer
             context.onElement2(element);
+        }
+    }
+
+    public void processWatermark(long watermark) throws Exception {
+        Set<Long> toRemove = new HashSet<>();
+        Set<ContextPair> toTrigger = new HashSet<>();
+
+        // we cannot call the Trigger in here because trigger methods might register new triggers.
+        // that would lead to concurrent modification errors.
+        for (Map.Entry<Long, Set<ContextPair>> triggers: watermarkTimers.entrySet()) {
+            if (triggers.getKey() <= watermark ) {
+                for (ContextPair context: triggers.getValue()) {
+                    toTrigger.add(context);
+                }
+                toRemove.add(triggers.getKey());
+            }
+        }
+
+        for (ContextPair context: toTrigger) {
+            if (context.watermarkTimer <= watermark) {
+                if(context.coGroupAble())
+                    processTriggerResult(context.key, context.window1);
+            }
+        }
+
+        for (Long l: toRemove) {
+            watermarkTimers.remove(l);
         }
     }
 
     @Override
     public void processWatermark1(Watermark mark) throws Exception {
-        Set<Long> toRemove = new HashSet<>();
-        Set<ContextPair> toTrigger = new HashSet<>();
-
-        // we cannot call the Trigger in here because trigger methods might register new triggers.
-        // that would lead to concurrent modification errors.
-        for (Map.Entry<Long, Set<ContextPair>> triggers: watermarkTimers.entrySet()) {
-            // TODO:
-            if (triggers.getKey() <= mark.getTimestamp()
-                    && triggers.getKey() <= this.currentWatermark2) {
-                for (ContextPair context: triggers.getValue()) {
-                    toTrigger.add(context);
-                }
-                toRemove.add(triggers.getKey());
-            }
-        }
-
-        for (ContextPair context: toTrigger) {
-            if (context.watermarkTimer <= mark.getTimestamp()
-                    && context.watermarkTimer <= this.currentWatermark2) {
-                if(null != context.window1 && null != context.window2)
-                    processTriggerResult(context.key, context.window1);
-            }
-        }
-
-        for (Long l: toRemove) {
-            watermarkTimers.remove(l);
-        }
+        long watermark = Math.min(this.currentWatermark2, mark.getTimestamp());
+        processWatermark(watermark);
 
         output.emitWatermark(mark);
+        this.currentWatermark = watermark;
         this.currentWatermark1 = mark.getTimestamp();
     }
 
     @Override
     public void processWatermark2(Watermark mark) throws Exception {
-        Set<Long> toRemove = new HashSet<>();
-        Set<ContextPair> toTrigger = new HashSet<>();
-
-        // we cannot call the Trigger in here because trigger methods might register new triggers.
-        // that would lead to concurrent modification errors.
-        for (Map.Entry<Long, Set<ContextPair>> triggers: watermarkTimers.entrySet()) {
-            if (triggers.getKey() <= mark.getTimestamp()
-                    && triggers.getKey() <= this.currentWatermark1) {
-                for (ContextPair context: triggers.getValue()) {
-                    toTrigger.add(context);
-                }
-                toRemove.add(triggers.getKey());
-            }
-        }
-
-        for (ContextPair context: toTrigger) {
-            if (context.watermarkTimer <= mark.getTimestamp()
-                    && context.watermarkTimer <= this.currentWatermark1) {
-                if(null != context.window1 && null != context.window2)
-                    processTriggerResult(context.key, context.window1);
-            }
-        }
-
-        for (Long l: toRemove) {
-            watermarkTimers.remove(l);
-        }
+        long watermark = Math.min(this.currentWatermark1, mark.getTimestamp());
+        processWatermark(watermark);
 
         output.emitWatermark(mark);
+        this.currentWatermark = watermark;
         this.currentWatermark2 = mark.getTimestamp();
     }
 
     /**
      * The {@code Context} is responsible for keeping track of the state of one pane.
-     *
+     * Each contextPair keeps tow windows with the same end time
      * <p>
      * A pane is the bucket of elements that have the same key (assigned by the
      * {@link org.apache.flink.api.java.functions.KeySelector}) and same {@link Window}. An element can
@@ -439,8 +417,8 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         protected TimeWindow window2;
 
 
-        protected WindowBuffer<IN1> windowBuffer1;
-        protected WindowBuffer<IN2> windowBuffer2;
+        private WindowBuffer<IN1> windowBuffer1;
+        private WindowBuffer<IN2> windowBuffer2;
 
         protected HashMap<String, Serializable> state;
 
@@ -589,18 +567,15 @@ public class CoGroupOperator<K, IN1, IN2, OUT>
         public void onElement1(StreamRecord<IN1> element) throws Exception {
             // onElement calls registerProcessingTimeTimer or registerEventTimeTimer
             // if window1 or window2 is null, then there is no need to register this PairContext
-            TimeWindow window = window1;
-            if(null != window2) {
-                if(window2.getEnd()>window1.getEnd()) window = window2;
-                trigger1.onElement(element.getValue(), element.getTimestamp(), window, this);
-            }
+            this.windowBuffer1.storeElement(element);
+            if(coGroupAble())
+                trigger1.onElement(element.getValue(), element.getTimestamp(), window1, this);
         }
 
         public void onElement2(StreamRecord<IN2> element) throws Exception {
-            TimeWindow window = window2;
-            if(null != window1) {
-                if(window1.getEnd()>window2.getEnd()) window = window1;
-                trigger2.onElement(element.getValue(), element.getTimestamp(), window, this);
+            this.windowBuffer2.storeElement(element);
+            if(coGroupAble()){
+                trigger2.onElement(element.getValue(), element.getTimestamp(), window2, this);
             }
         }
 

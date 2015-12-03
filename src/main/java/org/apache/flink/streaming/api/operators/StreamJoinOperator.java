@@ -145,8 +145,11 @@ public class StreamJoinOperator<K, IN1, IN2, OUT>
      * @throws Exception
      */
     private void processWatermark(long watermark) throws Exception{
+        System.out.println("Watermark:" + String.valueOf(watermark));
+
         if(setProcessingTime)
             return;
+
         // process elements after current watermark1 and lower than mark
         for (StreamRecord<IN1> record1 : stream1Buffer.getElements()) {
             if(record1.getTimestamp() >= this.currentWatermark
@@ -196,8 +199,6 @@ public class StreamJoinOperator<K, IN1, IN2, OUT>
 
     @Override
     public void processWatermark1(Watermark mark) throws Exception {
-        LOG.error("Watermark");
-
         long watermark = Math.min(mark.getTimestamp(), currentWatermark2);
         // process elements [currentWatermark, watermark)
         processWatermark(watermark);
@@ -209,8 +210,6 @@ public class StreamJoinOperator<K, IN1, IN2, OUT>
 
     @Override
     public void processWatermark2(Watermark mark) throws Exception {
-        LOG.error("Watermark");
-
         long watermark = Math.min(mark.getTimestamp(), currentWatermark1);
         // process elements [currentWatermark, watermark)
         processWatermark(watermark);
