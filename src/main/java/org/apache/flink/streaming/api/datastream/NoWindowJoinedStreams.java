@@ -6,6 +6,7 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.TimestampExtractor;
 import org.apache.flink.streaming.api.operators.StreamJoinOperator;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
@@ -69,6 +70,11 @@ public class NoWindowJoinedStreams<IN1, IN2> {
             }
         }
 
+        public Where<KEY> assignTimestamps(TimestampExtractor<IN1> extractor){
+            input1 = input1.assignTimestamps(extractor).keyBy(keySelector1);
+            return this;
+        }
+
         public WithOneBuffer buffer(Time time){
             return new WithOneBuffer(time, keyType);
         }
@@ -115,6 +121,11 @@ public class NoWindowJoinedStreams<IN1, IN2> {
                     if(!(input2 instanceof KeyedStream)){
                         input2 = input2.keyBy(keySelector2);
                     }
+                }
+
+                public EqualTo assignTimestamps(TimestampExtractor<IN2> extractor){
+                    input2 = input2.assignTimestamps(extractor).keyBy(keySelector2);
+                    return this;
                 }
 
                 /**

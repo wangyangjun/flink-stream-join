@@ -89,7 +89,7 @@ public class KafkaNoWindowJoinTest implements Serializable {
                         String[] splits = value.split(" ");
                         return new Tuple2<String, Long>(splits[0], Long.parseLong(splits[1]));
                     }
-                }).keyBy(keySelector).assignTimestamps(timestampExtractor1);
+                });
 
         DataStream<Tuple2<String, Long>> click = env
                 .addSource(new FlinkKafkaConsumer082<String>("click", new SimpleStringSchema(), properties))
@@ -101,14 +101,14 @@ public class KafkaNoWindowJoinTest implements Serializable {
                         String[] splits = value.split(" ");
                         return new Tuple2<String, Long>(splits[0], Long.parseLong(splits[1]));
                     }
-                }).keyBy(keySelector).assignTimestamps(timestampExtractor2);
+                });
 
         NoWindowJoinedStreams<Tuple2<String, Long>, Tuple2<String, Long>> joinedStreams =
                 new NoWindowJoinedStreams<>(advertisement, click);
         DataStream<Tuple3<String, Long, Long>> joinedStream = joinedStreams
-                .where(keySelector)
+                .where(keySelector).assignTimestamps(timestampExtractor1)
                 .buffer(Time.of(20, TimeUnit.SECONDS))
-                .equalTo(keySelector)
+                .equalTo(keySelector).assignTimestamps(timestampExtractor2)
                 .buffer(Time.of(5, TimeUnit.SECONDS))
                 .apply(new JoinFunction<Tuple2<String, Long>, Tuple2<String, Long>, Tuple3<String, Long, Long>>() {
                     private static final long serialVersionUID = -5075871109025215769L;
